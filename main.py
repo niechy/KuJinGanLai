@@ -25,27 +25,20 @@ DEBUG = False
 
 EXTENDED_DEVICE_SCAN = False
 
-if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
     SELF_DIR_PATH = os.path.dirname(sys.executable)
 else:
-    SELF_DIR_PATH = os.path.dirname(
-        os.path.realpath(__file__)
-    )
+    SELF_DIR_PATH = os.path.dirname(os.path.realpath(__file__))
 
 
-ADB = os.path.join(
-    SELF_DIR_PATH, "platform-tools", "adb.exe"
-)
+ADB = os.path.join(SELF_DIR_PATH, "platform-tools", "adb.exe")
 
 if not os.path.isfile(ADB):
     print("warning, adb.exe not found, try to use adb.exe in system path")
     ADB = "adb.exe"
 
 
-PACKAGE_NAMES = [
-    "com.hypergryph.arknights",
-    "com.hypergryph.arknights.bilibili"
-]
+PACKAGE_NAMES = ["com.hypergryph.arknights", "com.hypergryph.arknights.bilibili"]
 
 MI = 1024**2
 
@@ -63,13 +56,9 @@ T_START = time.time()
 T_SOUND_PERIOD = 15
 
 
-SETTING_FILE_PATH = os.path.join(
-    SELF_DIR_PATH, "settings.json"
-)
+SETTING_FILE_PATH = os.path.join(SELF_DIR_PATH, "settings.json")
 
-SOUND_FILE_PATH = os.path.join(
-    SELF_DIR_PATH, "proprietary_asset", "kujinganlai.mp3"
-)
+SOUND_FILE_PATH = os.path.join(SELF_DIR_PATH, "proprietary_asset", "kujinganlai.mp3")
 
 
 class Setting:
@@ -88,10 +77,7 @@ class Setting:
     def set_key(self, k, v):
         self.setting_obj[k] = v
         with open(SETTING_FILE_PATH, "w", encoding="utf-8") as f:
-            json.dump(
-                self.setting_obj, f,
-                ensure_ascii=False, indent=4
-            )
+            json.dump(self.setting_obj, f, ensure_ascii=False, indent=4)
 
 
 setting = Setting()
@@ -104,7 +90,7 @@ last_playsound_time = 0
 def do_message_warn(title: str, msg: str):
     if DEBUG:
         print("do_message_warn called")
-    TOAST.show_toast(title, msg, duration=10, threaded=True, icon_path='')
+    TOAST.show_toast(title, msg, duration=10, threaded=True, icon_path="")
 
 
 def do_audio_warn():
@@ -125,89 +111,53 @@ def do_warn(title: str, msg: str, ignore_sound_period: bool = False):
         global last_playsound_time
 
         t_now = time.time()
-        if ignore_sound_period or t_now > last_playsound_time+T_SOUND_PERIOD:
+        if ignore_sound_period or t_now > last_playsound_time + T_SOUND_PERIOD:
             last_playsound_time = t_now
             do_audio_warn()
 
 
-def find_emulators():
-    proc = subprocess.run(
-        [ADB, "devices"],
-        capture_output=True,
-        text=True
-    )
+MAX_NUM_MUMU_EMU = 4
+MAX_NUM_LD_EMU = 4
 
-    device_ids = []
+
+def get_running_emulators():
+    proc = subprocess.run([ADB, "devices"], capture_output=True, text=True)
+
+    running_emulator_id_lst = []
 
     for line in proc.stdout.splitlines()[1:]:
         line = line.strip()
         if line:
             line_split = line.split()
             if line_split[-1] != "offline":
-                device_ids.append(line_split[0])
+                running_emulator_id_lst.append(line_split[0])
 
-    return device_ids
-
-
-def find_emulator():
-    device_ids = find_emulators()
-    if device_ids:
-        return device_ids[0]
-    return None
+    return running_emulator_id_lst
 
 
 def connect_to_emulator():
-    device_ids = []
+    emulator_id_lst = []
 
-    # MUMU default
+    # MUMU
+    for i in range(MAX_NUM_MUMU_EMU):
+        emulator_id_lst.append(f"127.0.0.1:{16384+32*i}")
 
-    # https://mumu.163.com/help/20220721/35047_730476.html
-    # https://mumu.163.com/help/20230214/35047_1073151.html
-
-    device_ids.append("127.0.0.1:16384")
-    device_ids.append("127.0.0.1:7555")
-
-    # LD default
-
-    # https://help.ldmnq.com/docs/LD9adbserver
-
-    device_ids.append("127.0.0.1:5555")
-
-    if EXTENDED_DEVICE_SCAN:
-
-        # MUMU extra
-
-        # https://mumu.163.com/help/20230214/35047_1073151.html
-
-        MAX_NUM_MUMU = 4
-        for i in range(1, MAX_NUM_MUMU):
-            device_ids.append(f"127.0.0.1:{16384+32*i}")
-
-        # LD extra
-
-        # https://help.ldmnq.com/docs/LD9adbserver
-
-        MAX_NUM_LD = 4
-        for i in range(1, MAX_NUM_LD):
-            device_ids.append(f"127.0.0.1:{5555+2*i}")
+    # LD
+    for i in range(MAX_NUM_LD_EMU):
+        emulator_id_lst.append(f"127.0.0.1:{5555+2*i}")
 
     # try connecting
+    proc_lst = []
+    for emulator_id in emulator_id_lst:
+        proc = subprocess.Popen([ADB, "connect", emulator_id])
+        proc_lst.append(proc)
 
-    for device_id in device_ids:
-        found_device_id = find_emulator()
-        if found_device_id is not None:
-            return found_device_id
-        subprocess.run(
-            [ADB, "connect", device_id]
-        )
-
-    found_device_id = find_emulator()
-    if found_device_id is not None:
-        return found_device_id
+    for proc in proc_lst:
+        proc.wait()
 
 
 def is_emulator_alive(target_device_id):
-    device_ids = find_emulators()
+    device_ids = get_running_emulators()
     return device_ids.count(target_device_id)
 
 
@@ -217,15 +167,21 @@ def get_package_abi(target_device_id):
         try:
             proc = subprocess.run(
                 [
-                    ADB, "-s", target_device_id, "shell",
-                    "pm", "dump", package_name,
+                    ADB,
+                    "-s",
+                    target_device_id,
+                    "shell",
+                    "pm",
+                    "dump",
+                    package_name,
                     "|",
-                    "grep", "primaryCpuAbi"
+                    "grep",
+                    "primaryCpuAbi",
                 ],
                 capture_output=True,
-                text=True
+                text=True,
             )
-            abi = proc.stdout.partition('primaryCpuAbi=')[-1].split()[0]
+            abi = proc.stdout.partition("primaryCpuAbi=")[-1].split()[0]
         except Exception:
             abi = None
         package_abi[package_name] = abi
@@ -237,21 +193,15 @@ def get_app_mem(target_device_id):
     for package_name in PACKAGE_NAMES:
         try:
             proc = subprocess.run(
-                [
-                    ADB, "-s", target_device_id, "shell",
-                    "pidof", "-s", package_name
-                ],
+                [ADB, "-s", target_device_id, "shell", "pidof", "-s", package_name],
                 capture_output=True,
-                text=True
+                text=True,
             )
             pid = int(proc.stdout)
             proc = subprocess.run(
-                [
-                    ADB, "-s", target_device_id, "shell", "cat",
-                    f"/proc/{pid}/statm"
-                ],
+                [ADB, "-s", target_device_id, "shell", "cat", f"/proc/{pid}/statm"],
                 capture_output=True,
-                text=True
+                text=True,
             )
             vss = int(proc.stdout.split()[0]) * 4096
         except Exception:
@@ -263,11 +213,9 @@ def get_app_mem(target_device_id):
 def get_emulator_mem(target_device_id):
     try:
         proc = subprocess.run(
-            [
-                ADB, "-s", target_device_id, "shell", "free"
-            ],
+            [ADB, "-s", target_device_id, "shell", "free"],
             capture_output=True,
-            text=True
+            text=True,
         )
         emulator_mem = int(proc.stdout.splitlines()[1].split()[3])
     except Exception:
@@ -291,8 +239,8 @@ class GraphOrigData:
     def get_graph_data(self):
         with self.lock:
             return (
-                self.x_arr[-self.LEN_GRAPH_DATA:],
-                self.y_arr[-self.LEN_GRAPH_DATA:]
+                self.x_arr[-self.LEN_GRAPH_DATA :],
+                self.y_arr[-self.LEN_GRAPH_DATA :],
             )
 
 
@@ -301,9 +249,7 @@ graph_orig_data_dict = {}
 graph_orig_data_dict["emulator_mem"] = GraphOrigData()
 
 for package_name in PACKAGE_NAMES:
-    graph_orig_data_dict[
-        f"x86_remaining_vss-{package_name}"
-    ] = GraphOrigData()
+    graph_orig_data_dict[f"x86_remaining_vss-{package_name}"] = GraphOrigData()
 
 
 def do_check(target_device_id):
@@ -319,22 +265,14 @@ def do_check(target_device_id):
 
         msgs = []
 
-        if emulator_mem is not None and (
-            DEBUG or emulator_mem < EMU_MEM_THRESH
-        ):
-            msgs.append(
-                f"模拟器当前剩余物理内存为 {emulator_mem/MI:.0f} MiB"
-            )
+        if emulator_mem is not None and (DEBUG or emulator_mem < EMU_MEM_THRESH):
+            msgs.append(f"模拟器当前剩余物理内存为 {emulator_mem/MI:.0f} MiB")
 
         if emulator_mem is not None:
-            status_text_arr.append(
-                f"剩余物理内存: {emulator_mem/MI:.0f} MiB"
-            )
+            status_text_arr.append(f"剩余物理内存: {emulator_mem/MI:.0f} MiB")
 
         if emulator_mem is not None:
-            graph_orig_data_dict["emulator_mem"].add(
-                t_now-T_START, emulator_mem/MI
-            )
+            graph_orig_data_dict["emulator_mem"].add(t_now - T_START, emulator_mem / MI)
 
         for package_name in PACKAGE_NAMES:
             abi = package_abi[package_name]
@@ -349,8 +287,9 @@ def do_check(target_device_id):
                 )
 
             if (
-                abi == "x86" and vss is not None and
-                (DEBUG or x86_remaining_vss < X86_REM_VSS_THRESH)
+                abi == "x86"
+                and vss is not None
+                and (DEBUG or x86_remaining_vss < X86_REM_VSS_THRESH)
             ):
                 msgs.append(
                     f"游戏进程当前剩余虚拟内存为 {x86_remaining_vss/MI:.0f} MiB"
@@ -362,13 +301,11 @@ def do_check(target_device_id):
                 )
 
             if abi == "x86" and vss is not None:
-                graph_orig_data_dict[
-                    f"x86_remaining_vss-{package_name}"
-                ].add(
-                    t_now-T_START, x86_remaining_vss/MI
+                graph_orig_data_dict[f"x86_remaining_vss-{package_name}"].add(
+                    t_now - T_START, x86_remaining_vss / MI
                 )
         if msgs:
-            msg = '; '.join(msgs)
+            msg = "; ".join(msgs)
             do_warn("⚠⚠⚠ 滴嘟滴嘟 ⚠⚠⚠", msg)
     except Exception:
         pass
@@ -396,7 +333,10 @@ def update_device_id_thread_func():
                     current_device_id = None
 
             if current_device_id is None:
-                current_device_id = connect_to_emulator()
+                connect_to_emulator()
+                device_ids = get_running_emulators()
+                if device_ids:
+                    current_device_id = device_ids[0]
         cnt += 1
         # 3s
         if cnt >= 30:
@@ -414,7 +354,7 @@ update_device_id_thread.start()
 # tkinter root, may be none when thread starts
 root = None
 
-status_text = ''
+status_text = ""
 
 
 def do_check_thread_func():
@@ -433,13 +373,15 @@ def do_check_thread_func():
                 status_text_arr = do_check(device_id)
                 if not status_text_arr:
                     status_text_arr = [f"模拟器{device_id}未给出有效响应"]
-                status_text_arr = [
-                    f"当前模拟器: {device_id}",
-                    "----------------------------------------"
-                ] + status_text_arr + [
-                    "----------------------------------------"
-                ]
-                status_text = '\n'.join(status_text_arr)
+                status_text_arr = (
+                    [
+                        f"当前模拟器: {device_id}",
+                        "----------------------------------------",
+                    ]
+                    + status_text_arr
+                    + ["----------------------------------------"]
+                )
+                status_text = "\n".join(status_text_arr)
             else:
                 status_text = "正在寻找运行中的模拟器..."
             if root is not None:
@@ -483,11 +425,13 @@ def draw_graph_thread_func():
 
             if emulator_mem_x:
                 ax.plot(
-                    emulator_mem_x, emulator_mem_y,
-                    color="black", label="模拟器剩余物理内存"
+                    emulator_mem_x,
+                    emulator_mem_y,
+                    color="black",
+                    label="模拟器剩余物理内存",
                 )
 
-                ax.set_ylim(bottom=0, top=1.2*max(emulator_mem_y))
+                ax.set_ylim(bottom=0, top=1.2 * max(emulator_mem_y))
 
             app_x86_remaining_vss = {}
 
@@ -499,31 +443,23 @@ def draw_graph_thread_func():
             x86_remaining_vss_y_max = 0
 
             for package_name in PACKAGE_NAMES:
-                (
-                    x86_remaining_vss_x,
-                    x86_remaining_vss_y
-                ) = app_x86_remaining_vss[
+                (x86_remaining_vss_x, x86_remaining_vss_y) = app_x86_remaining_vss[
                     package_name
                 ]
                 if x86_remaining_vss_x:
                     ax2.plot(
                         x86_remaining_vss_x,
                         x86_remaining_vss_y,
-                        label="明日方舟剩余虚拟内存"
+                        label="明日方舟剩余虚拟内存",
                     )
                     x86_remaining_vss_y_max = max(
-                        x86_remaining_vss_y_max,
-                        max(x86_remaining_vss_y)
+                        x86_remaining_vss_y_max, max(x86_remaining_vss_y)
                     )
 
-            ax2.set_ylim(bottom=0, top=1.2*x86_remaining_vss_y_max)
+            ax2.set_ylim(bottom=0, top=1.2 * x86_remaining_vss_y_max)
 
-            ax.legend(
-                loc="upper left"
-            )
-            ax2.legend(
-                loc="upper right"
-            )
+            ax.legend(loc="upper left")
+            ax2.legend(loc="upper right")
 
             if root is not None:
                 root.event_generate("<<canvas_updated>>")
@@ -546,7 +482,8 @@ frm.grid(sticky=tkinter.NSEW)
 
 label_text = tkinter.StringVar(value="启动中...")
 label = ttk.Label(frm, textvariable=label_text, anchor=tkinter.CENTER).grid(
-    column=0, row=0, sticky=tkinter.NSEW)
+    column=0, row=0, sticky=tkinter.NSEW
+)
 
 
 canvas = FigureCanvasTkAgg(fig, master=frm)
@@ -557,13 +494,14 @@ check_button = tkinter.Checkbutton(
     frm,
     text="开启苦尽甘来语音提醒",
     variable=check_button_val,
-    command=lambda: setting.set_key("use_audio", check_button_val.get())
+    command=lambda: setting.set_key("use_audio", check_button_val.get()),
 )
 check_button.grid(column=0, row=2)
 
 test_button = tkinter.Button(
-    frm, text="测试提醒功能",
-    command=lambda: do_warn("测试标题", "测试内容", ignore_sound_period=True)
+    frm,
+    text="测试提醒功能",
+    command=lambda: do_warn("测试标题", "测试内容", ignore_sound_period=True),
 )
 test_button.grid(column=0, row=3)
 
@@ -580,10 +518,7 @@ def mask_button_cmd():
 
 
 mask_button = tkinter.Checkbutton(
-    frm,
-    text="屏蔽苦尽甘来警告",
-    variable=mask_button_val,
-    command=mask_button_cmd
+    frm, text="屏蔽苦尽甘来警告", variable=mask_button_val, command=mask_button_cmd
 )
 mask_button.grid(column=0, row=4)
 
